@@ -1,0 +1,9 @@
+{
+  "name": "launch-video",
+  "displayName": "Launch Video Kit",
+  "version": "1.0.0",
+  "description": "Launch films, Reels/TikTok/YouTube ad cuts and app demo videos made from code: canvas animation drawn as a pure function of time, real app captures in a phone mockup, a synthesized score on the same cue sheet, and a senior-editor critique agent.",
+  "author": { "name": "Luca Vehbiu" },
+  "repository": "https://github.com/lucavehbiu/claude-video-kit",
+  "license": "UNLICENSED"
+}

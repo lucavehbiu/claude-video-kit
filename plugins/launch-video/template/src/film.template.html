@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PlayPals Launch Film</title>
+<style>
+  :root { --bg: #f7f8fa; --ink: #0c1222; --ink3: #687185; --line: #e4e7ef; --brand: #2563eb; --paper: #ffffff; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0a1628; --ink: #f2f6fb; --ink3: #a2afc0; --line: rgba(163,190,228,0.16); --brand: #3b82f6; --paper: #0f2744; }
+  }
+  :root[data-theme="dark"] { --bg: #0a1628; --ink: #f2f6fb; --ink3: #a2afc0; --line: rgba(163,190,228,0.16); --brand: #3b82f6; --paper: #0f2744; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 500 15px/1.4 Satoshi, -apple-system, 'Helvetica Neue', sans-serif; }
+  main { max-width: 1200px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font: 800 28px/1.1 Bricolage, 'Arial Black', sans-serif; letter-spacing: -0.5px; margin: 0 0 4px; }
+  h1 em { font-style: normal; color: var(--brand); }
+  p.sub { margin: 0 0 20px; color: var(--ink3); }
+  .stage { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); background: #0a1628; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .bar { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+  button { appearance: none; border: 0; background: var(--brand); color: #fff; font: 700 14px Satoshi, sans-serif; padding: 10px 18px; border-radius: 999px; cursor: pointer; min-width: 84px; }
+  input[type=range] { flex: 1; accent-color: var(--brand); }
+  .time { font-variant-numeric: tabular-nums; color: var(--ink3); min-width: 88px; text-align: right; }
+  body.render main { padding: 0; max-width: none; }
+  body.render .chrome, body.render .bar { display: none; }
+  body.render .stage { width: 1920px; height: 1080px; border: 0; border-radius: 0; }
+</style>
+</head>
+<body>
+<main>
+  <div class="chrome">
+    <h1>Play<em>Pals</em> — launch film</h1>
+    <p class="sub">32s · 1920×1080 · every frame drawn from one timeline, score synthesized from the same cues.</p>
+  </div>
+  <div class="stage"><canvas id="c" width="1920" height="1080"></canvas></div>
+  <div class="bar">
+    <button id="play">Play</button>
+    <input id="scrub" type="range" min="0" max="32" step="0.001" value="0">
+    <span class="time" id="time">0.00s</span>
+  </div>
+  <audio id="score" preload="auto" src="@@SCORE@@"></audio>
+</main>
+<script>
+@@FILM_JS@@
+
+(async () => {
+  const faces = [
+    new FontFace('Bricolage', 'url(data:font/ttf;base64,@@BRICOLAGE@@)', { weight: '800' }),
+    new FontFace('Satoshi', 'url(data:font/otf;base64,@@SATOSHI_MED@@)', { weight: '500' }),
+    new FontFace('Satoshi', 'url(data:font/otf;base64,@@SATOSHI_BOLD@@)', { weight: '700' }),
+  ];
+  for (const f of faces) document.fonts.add(await f.load());
+  const icon = new Image();
+  icon.src = 'data:image/png;base64,@@ICON@@';
+  await icon.decode();
+  const A = { icon };
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { willReadFrequently: false });
+  const render = new URLSearchParams(location.search).has('render');
+
+  if (render) {
+    document.body.classList.add('render');
+    // motion blur: average N sub-frames across a 180° shutter
+    const off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    const octx = off.getContext('2d', { willReadFrequently: true });
+    const acc = new Uint32Array(W * H * 4);
+    window.renderFrame = (f, n = 4) => {
+      const t0 = f / FPS;
+      if (n <= 1) { draw(ctx, t0, A); return; }
+      acc.fill(0);
+      const shutter = 0.5 / FPS;
+      for (let k = 0; k < n; k++) {
+        draw(octx, t0 + ((k + 0.5) / n - 0.5) * shutter, A);
+        const d = octx.getImageData(0, 0, W, H).data;
+        for (let i = 0; i < d.length; i++) acc[i] += d[i];
+      }
+      const img = ctx.createImageData(W, H);
+      const o = img.data;
+      for (let i = 0; i < o.length; i++) o[i] = (acc[i] + (n >> 1)) / n;
+      ctx.putImageData(img, 0, 0);
+    };
+    window.__ready = true;
+    return;
+  }
+
+  const audio = document.getElementById('score');
+  const hasAudio = !!audio.getAttribute('src');
+  const btn = document.getElementById('play'), scrub = document.getElementById('scrub'), time = document.getElementById('time');
+  let playing = false, start = 0, t = 0;
+  const show = (tt) => { draw(ctx, tt, A); scrub.value = tt; time.textContent = tt.toFixed(2) + 's'; };
+  const loop = (now) => {
+    if (!playing) return;
+    t = hasAudio ? audio.currentTime : (now - start) / 1000;
+    if (t >= DURATION) { playing = false; btn.textContent = 'Replay'; t = DURATION - 1e-3; show(t); return; }
+    show(t);
+    requestAnimationFrame(loop);
+  };
+  btn.onclick = () => {
+    if (playing) { playing = false; if (hasAudio) audio.pause(); btn.textContent = 'Play'; return; }
+    if (t >= DURATION - 0.01) t = 0;
+    playing = true; btn.textContent = 'Pause';
+    start = performance.now() - t * 1000;
+    if (hasAudio) { audio.currentTime = t; audio.play(); }
+    requestAnimationFrame(loop);
+  };
+  scrub.oninput = () => { t = +scrub.value; if (hasAudio) audio.currentTime = t; start = performance.now() - t * 1000; if (!playing) show(t); };
+  show(0);
+})();
+</script>
+</body>
+</html>

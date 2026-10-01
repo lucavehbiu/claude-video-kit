@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PlayPals Reels</title>
+<style>
+  :root { --bg: #f7f8fa; --ink: #0c1222; --ink3: #687185; --line: #e4e7ef; --brand: #2563eb; --paper: #ffffff; --chip: #eef1f6; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0a1628; --ink: #f2f6fb; --ink3: #a2afc0; --line: rgba(163,190,228,0.16); --brand: #3b82f6; --paper: #0f2744; --chip: #16243f; }
+  }
+  :root[data-theme="dark"] { --bg: #0a1628; --ink: #f2f6fb; --ink3: #a2afc0; --line: rgba(163,190,228,0.16); --brand: #3b82f6; --paper: #0f2744; --chip: #16243f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 500 15px/1.4 Satoshi, -apple-system, 'Helvetica Neue', sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 28px 16px 48px; display: grid; grid-template-columns: minmax(0, 420px) 1fr; gap: 28px; align-items: start; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  h1 { font: 800 28px/1.1 Bricolage, 'Arial Black', sans-serif; letter-spacing: -0.5px; margin: 0 0 4px; }
+  h1 em { font-style: normal; color: var(--brand); }
+  h2 { font: 700 12px Satoshi, sans-serif; letter-spacing: 2px; text-transform: uppercase; color: var(--ink3); margin: 22px 0 8px; }
+  p { margin: 0 0 8px; color: var(--ink3); }
+  .stage { width: 100%; aspect-ratio: 9 / 16; border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: #0a1628; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .bar { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+  button { appearance: none; border: 0; background: var(--brand); color: #fff; font: 700 14px Satoshi, sans-serif; padding: 10px 18px; border-radius: 999px; cursor: pointer; min-width: 84px; }
+  input[type=range] { flex: 1; min-width: 0; accent-color: var(--brand); }
+  .time { font-variant-numeric: tabular-nums; color: var(--ink3); min-width: 70px; text-align: right; }
+  .cuts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cuts button { background: var(--chip); color: var(--ink); min-width: 0; }
+  .cuts button[aria-pressed="true"] { background: var(--brand); color: #fff; }
+  .secs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .secs label { display: inline-flex; gap: 6px; align-items: center; background: var(--chip); padding: 7px 12px; border-radius: 999px; cursor: pointer; font-weight: 700; font-size: 13px; }
+  .note { font-size: 13px; }
+  body.render main { display: block; padding: 0; max-width: none; }
+  body.render .side, body.render .bar { display: none; }
+  body.render .stage { width: 1080px; height: 1920px; border: 0; border-radius: 0; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <div class="stage"><canvas id="c" width="1080" height="1920"></canvas></div>
+    <div class="bar">
+      <button id="play">Play</button>
+      <input id="scrub" type="range" min="0" max="10" step="0.001" value="0">
+      <span class="time" id="time">0.0s</span>
+    </div>
+  </div>
+  <div class="side">
+    <h1>Play<em>Pals</em> reels</h1>
+    <p>9:16, 1080×1920. Every section starts and ends on the dot, so any combination cuts together.</p>
+    <h2>Cuts</h2>
+    <div class="cuts" id="cuts"></div>
+    <h2>Sections — tick to build your own</h2>
+    <div class="secs" id="secs"></div>
+    <p class="note" id="note"></p>
+  </div>
+  <audio id="score" preload="auto"></audio>
+</main>
+<script>
+@@REEL_JS@@
+const SCORES = @@SCORES@@;
+
+(async () => {
+  const faces = [
+    new FontFace('Bricolage', 'url(data:font/ttf;base64,@@BRICOLAGE@@)', { weight: '800' }),
+    new FontFace('Satoshi', 'url(data:font/otf;base64,@@SATOSHI_MED@@)', { weight: '500' }),
+    new FontFace('Satoshi', 'url(data:font/otf;base64,@@SATOSHI_BOLD@@)', { weight: '700' }),
+  ];
+  for (const f of faces) document.fonts.add(await f.load());
+  const img = async (src) => { const i = new Image(); i.src = src; await i.decode(); return i; };
+  const A = {
+    icon: await img('data:image/png;base64,@@ICON@@'),
+    shots: {
+      map: await img('data:image/jpeg;base64,@@SHOT_MAP@@'),
+      group: await img('data:image/jpeg;base64,@@SHOT_GROUP@@'),
+      event: await img('data:image/jpeg;base64,@@SHOT_EVENT@@'),
+      availability: await img('data:image/jpeg;base64,@@SHOT_AVAIL@@'),
+    },
+    // optional real photos (assets/photo-goal.jpg, assets/photo-bbq.jpg); drawn fallbacks otherwise
+    photos: Object.fromEntries(await Promise.all(Object.entries(@@PHOTOS@@).map(async ([k, v]) => [k, await img(v)]))),
+  };
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const q = new URLSearchParams(location.search);
+  const idsFor = (name) => (CUTS[name] ? CUTS[name] : name.split(','));
+
+  if (q.has('render')) {
+    document.body.classList.add('render');
+    const pl = plan(idsFor(q.get('cut') || 'long'));
+    const off = document.createElement('canvas'); off.width = RW; off.height = RH;
+    const octx = off.getContext('2d', { willReadFrequently: true });
+    const acc = new Uint32Array(RW * RH * 4);
+    window.__duration = pl.duration;
+    window.__cues = cueSheet(pl);
+    window.renderFrame = (f, n = 4) => {
+      const t0 = f / RFPS;
+      if (n <= 1) { drawReel(ctx, t0, A, pl); return; }
+      acc.fill(0);
+      const shutter = 0.5 / RFPS;
+      for (let k = 0; k < n; k++) {
+        drawReel(octx, Math.max(0, t0 + ((k + 0.5) / n - 0.5) * shutter), A, pl);
+        const d = octx.getImageData(0, 0, RW, RH).data;
+        for (let i = 0; i < d.length; i++) acc[i] += d[i];
+      }
+      const im = ctx.createImageData(RW, RH), o = im.data;
+      for (let i = 0; i < o.length; i++) o[i] = (acc[i] + (n >> 1)) / n;
+      ctx.putImageData(im, 0, 0);
+    };
+    window.__ready = true;
+    return;
+  }
+
+  const audio = document.getElementById('score');
+  const btn = document.getElementById('play'), scrub = document.getElementById('scrub'), time = document.getElementById('time');
+  const cutsEl = document.getElementById('cuts'), secsEl = document.getElementById('secs'), note = document.getElementById('note');
+  let pl, cutName, hasAudio = false, playing = false, start = 0, t = 0;
+
+  const show = (tt) => { drawReel(ctx, tt, A, pl); scrub.value = tt; time.textContent = tt.toFixed(1) + 's'; };
+  function load(name, ids) {
+    playing = false; audio.pause(); btn.textContent = 'Play';
+    cutName = name; pl = plan(ids); t = 0;
+    scrub.max = pl.duration;
+    hasAudio = !!SCORES[name];
+    if (hasAudio) audio.src = SCORES[name]; else audio.removeAttribute('src');
+    note.textContent = hasAudio ? `${ids.length} sections · ${pl.duration}s · with score`
+      : `${ids.length} sections · ${pl.duration}s · no score in the preview for a custom mix (render it: node render.mjs --reel ${ids.join(',')})`;
+    [...cutsEl.children].forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.cut === name)));
+    [...secsEl.querySelectorAll('input')].forEach((c) => { c.checked = ids.includes(c.value); });
+    show(0);
+  }
+  Object.entries(CUTS).forEach(([name, ids]) => {
+    const b = document.createElement('button'); b.textContent = `${name} · ${plan(ids).duration}s`; b.dataset.cut = name;
+    b.onclick = () => load(name, ids); cutsEl.appendChild(b);
+  });
+  CUTS.long.forEach((id) => {
+    const l = document.createElement('label');
+    l.innerHTML = `<input type="checkbox" value="${id}"> ${id} <span style="color:var(--ink3)">${SECTIONS[id].dur}s</span>`;
+    l.querySelector('input').onchange = () => {
+      const ids = [...secsEl.querySelectorAll('input:checked')].map((c) => c.value);
+      if (ids.length) load('custom', ids);
+    };
+    secsEl.appendChild(l);
+  });
+  const loop = (now) => {
+    if (!playing) return;
+    t = hasAudio ? audio.currentTime : (now - start) / 1000;
+    if (t >= pl.duration) { playing = false; btn.textContent = 'Replay'; t = pl.duration - 1e-3; show(t); return; }
+    show(t); requestAnimationFrame(loop);
+  };
+  btn.onclick = () => {
+    if (playing) { playing = false; audio.pause(); btn.textContent = 'Play'; return; }
+    if (t >= pl.duration - 0.01) t = 0;
+    playing = true; btn.textContent = 'Pause'; start = performance.now() - t * 1000;
+    if (hasAudio) { audio.currentTime = t; audio.play(); }
+    requestAnimationFrame(loop);
+  };
+  scrub.oninput = () => { t = +scrub.value; if (hasAudio) audio.currentTime = t; start = performance.now() - t * 1000; if (!playing) show(t); };
+  load('long', CUTS.long);
+})();
+</script>
+</body>
+</html>

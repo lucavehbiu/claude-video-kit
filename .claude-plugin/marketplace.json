@@ -1,0 +1,11 @@
+{
+  "name": "claude-video-kit",
+  "owner": { "name": "Luca Vehbiu" },
+  "plugins": [
+    {
+      "name": "launch-video",
+      "source": "./plugins/launch-video",
+      "description": "Launch videos and ad reels from code, with a builder agent and a senior video-editor critic."
+    }
+  ]
+}
